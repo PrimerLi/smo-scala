@@ -348,7 +348,9 @@ class SVM
         val (data, labels) = this.readFile(testFileName)
         val predictions: ArrayBuffer[Double] = data.map(vector => SVM.innerProduct(this.beta, vector) + this.beta_0)
         SVM.printFile(predictions, labels, "prediction,label", "prediction_label.csv")
-        val confusionMatrix:ArrayBuffer[ArrayBuffer[Double]] = SVM.getConfusionMatrix(predictions, labels)
+        val confusionMatrix:ArrayBuffer[ArrayBuffer[Double]] = SVM.getConfusionMatrix(predictions, labels, "confusion_matrix.txt")
+        assert(confusionMatrix.length == 2)
+        assert(confusionMatrix(0).length == 2)
     }
 }
 
@@ -402,7 +404,7 @@ object SVM
         else return right
     }
     def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
-    def printFile[T: Numeric](x: ArrayBuffer[T], y: ArrayBuffer[T], header: String, outputFileName: String): Unit = 
+    def printFile(x: ArrayBuffer[Double], y: ArrayBuffer[Int], header: String, outputFileName: String): Unit = 
     {
         assert(x.length == y.length)
         val writer = new PrintWriter(outputFileName)
@@ -413,22 +415,74 @@ object SVM
         }
         writer.close()
     }
-    def getConfusionMatrix(predictions: ArrayBuffer[Double], labels: ArrayBuffer[Int]): ArrayBiffer[ArrayBuffer[Double]] = 
+    def getConfusionMatrix(predictions: ArrayBuffer[Double], labels: ArrayBuffer[Int], outputFileName: String): ArrayBuffer[ArrayBuffer[Double]] = 
     {
+        assert(predictions.length == labels.length)
         var trueNegative: Double = 0
         var falseNegative: Double = 0
         var falsePositive: Double = 0
         var truePositive: Double = 0
-        assert
+        for (i <- predictions.indices)
+        {
+            if (predictions(i) > 0)
+            {
+                if (labels(i) > 0)
+                    truePositive += 1
+                else
+                    falsePositive += 1
+            }
+            else
+            {
+                if (labels(i) > 0)
+                    falseNegative += 1
+                else
+                    trueNegative += 1
+            }
+        }
+        val result = new ArrayBuffer[ArrayBuffer[Double]]
+        val firstRow: ArrayBuffer[Double] = Array[Double](trueNegative, falseNegative).to[ArrayBuffer]
+        val secondRow: ArrayBuffer[Double] = Array[Double](falsePositive, truePositive).to[ArrayBuffer]
+        result.append(firstRow)
+        result.append(secondRow)
+        val eps = 1.0e-10
+        val captureRate = (truePositive + eps)/(truePositive + falseNegative + eps)
+        val incorrectSlayRate = (falsePositive + eps)/(falsePositive + truePositive + eps)
+        println("Confusion matrix: ")
+        println(trueNegative + "  " + falseNegative)
+        println(falsePositive + "  " + truePositive)
+        println("Capture rate = " + captureRate)
+        println("Incorrect slay rate = " + incorrectSlayRate)
+        val writer = new PrintWriter(new File(outputFileName))
+        writer.write("Confusion matrix:\n")
+        writer.write(trueNegative.toString + "  " + falseNegative.toString + "\n")
+        writer.write(falsePositive.toString + "  " + truePositive.toString + "\n")
+        writer.write("Capture rate = " + captureRate.toString + "\n")
+        writer.write("Incorrect slay rate = " + incorrectSlayRate.toString + "\n")
+        result
     }
 }
 
 object svm_test
 {
+    def split(inputFileName: String): (String, String) = 
+    {
+        val trainFileName = "train.csv"
+        val testFileName = "test.csv"
+        readFile
+    }
     def main(args: Array[String]): Unit = 
     {
+        if (args.length != 2)
+        {
+            println("inputFileName = args(0), trainRatio = args(1). ")
+            System.exit(-1)
+        }
+        val inputFileName = args(0)
+        val trainRatio = args(1).toDouble
+        assert(trainRatio > 0 && trainRatio < 1)
         val C = 10000
-        val svm = new SVM("data.csv", C)
+        val svm = new SVM(trainFileName, C)
         svm.train()
+        svm.test(testFileName)
     }
 }
