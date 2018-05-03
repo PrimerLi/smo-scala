@@ -19,38 +19,7 @@ class SVM
     var beta: ArrayBuffer[Double] = new ArrayBuffer[Double]
     var beta_0: Double = 0
     var pairs: ArrayBuffer[(Int, Int)] = new ArrayBuffer[(Int, Int)]
-    
-    def getLines(inputFileName: String): (String, ArrayBuffer[String]) = 
-    {
-        assert(Files.exists(Paths.get(inputFileName)))
-        var counter: Int = 0
-        var header: String = ""
-        val lines: ArrayBuffer[String] = new ArrayBuffer[String]
-        for (line <- Source.fromFile(inputFileName).getLines)
-        {
-            counter match
-            {
-                case 0 => 
-                {
-                    header = line.stripLineEnd
-                }
-                case _ => 
-                {
-                    lines.append(line.stripLineEnd)
-                }
-            }
-            counter += 1
-        }
-        (header, lines)
-    }
 
-    def readFile(inputFileName: String): (ArrayBuffer[ArrayBuffer[Double]], ArrayBuffer[Int]) = 
-    {
-        var (header:String, lines:ArrayBuffer[String]) = this.getLines(inputFileName)
-        val data: ArrayBuffer[ArrayBuffer[Double]] = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
-        val label: ArrayBuffer[Int] = lines.map(line => line.split(",").last.toInt)
-        return (data, label)
-    }
 
     def getPairs(n: Int): ArrayBuffer[(Int, Int)] = 
     {
@@ -96,7 +65,7 @@ class SVM
     {
         this()
         assert(C > 0)
-        var (header, lines) = getLines(inputFileName)
+        var (header, lines) = SVM.getLines(inputFileName)
         this.numberOfFeatures = header.split(",").length - 1
         this.numberOfSamples = lines.length
         this.X = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
@@ -345,7 +314,7 @@ class SVM
     def test(testFileName: String): Unit = 
     {
         assert(Files.exists(Paths.get(testFileName)))
-        val (data, labels) = this.readFile(testFileName)
+        val (data, labels) = SVM.readFile(testFileName)
         val predictions: ArrayBuffer[Double] = data.map(vector => SVM.innerProduct(this.beta, vector) + this.beta_0)
         SVM.printFile(predictions, labels, "prediction,label", "prediction_label.csv")
         val confusionMatrix:ArrayBuffer[ArrayBuffer[Double]] = SVM.getConfusionMatrix(predictions, labels, "confusion_matrix.txt")
@@ -355,7 +324,39 @@ class SVM
 }
 
 object SVM
-{
+{    
+    def getLines(inputFileName: String): (String, ArrayBuffer[String]) = 
+    {
+        assert(Files.exists(Paths.get(inputFileName)))
+        var counter: Int = 0
+        var header: String = ""
+        val lines: ArrayBuffer[String] = new ArrayBuffer[String]
+        for (line <- Source.fromFile(inputFileName).getLines)
+        {
+            counter match
+            {
+                case 0 => 
+                {
+                    header = line.stripLineEnd
+                }
+                case _ => 
+                {
+                    lines.append(line.stripLineEnd)
+                }
+            }
+            counter += 1
+        }
+        (header, lines)
+    }
+
+    def readFile(inputFileName: String): (ArrayBuffer[ArrayBuffer[Double]], ArrayBuffer[Int]) = 
+    {
+        var (header:String, lines:ArrayBuffer[String]) = SVM.getLines(inputFileName)
+        val data: ArrayBuffer[ArrayBuffer[Double]] = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
+        val label: ArrayBuffer[Int] = lines.map(line => line.split(",").last.toInt)
+        return (data, label)
+    }
+
     def arrayToString(array: Array[Double]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
     def sum(a: Array[Double], b: Array[Double]): Array[Double] = a.zip(b).map(pair => pair._1 + pair._2)
     def sum(a: ArrayBuffer[Double], b: ArrayBuffer[Double]): ArrayBuffer[Double] = a.zip(b).map(pair => pair._1 + pair._2)
@@ -464,11 +465,27 @@ object SVM
 
 object svm_test
 {
-    def split(inputFileName: String): (String, String) = 
+    def printLines(header: String, lines: ArrayBuffer[String], start: Int, end: Int, outputFileName: String): Unit = 
     {
-        val trainFileName = "train.csv"
-        val testFileName = "test.csv"
-        readFile
+        assert(start >= 0 && start < end)
+        assert(end < lines.length)
+        val writer = new PrintWriter(new File(outputFileName))
+        writer.write(header + "\n")
+        for (i <- start until end)
+        {
+            writer.write(lines(i) + "\n")
+        }
+        writer.close()
+    }
+    def split(inputFileName: String, trainRatio: Double, trainFileName: String, testFileName: String): Unit = 
+    {
+        assert(Files.exists(Paths.get(inputFileName)))
+        assert(trainRatio > 0 && trainRatio < 1)
+        val (header, lines) = SVM.getLines(inputFileName)
+        val trainNumber = (trainRatio*lines.length).toInt
+        val trainWriter = new PrintWriter(new File(trainFileName))
+        printLines(header, lines, 0, trainNumber, trainFileName)
+        printLines(header, lines, trainNumber, lines.length, testFileName)
     }
     def main(args: Array[String]): Unit = 
     {
@@ -480,6 +497,9 @@ object svm_test
         val inputFileName = args(0)
         val trainRatio = args(1).toDouble
         assert(trainRatio > 0 && trainRatio < 1)
+        val trainFileName = "train.csv"
+        val testFileName = "test.csv"
+        split(inputFileName, trainRatio, trainFileName, testFileName)
         val C = 10000
         val svm = new SVM(trainFileName, C)
         svm.train()
