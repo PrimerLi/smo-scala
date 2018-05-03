@@ -260,18 +260,19 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 10
+        val iterationMax: Int = 50
         var counter: Int = 0
-        val updateEntireFrequency: Double = 0.5
+        val updateEntireFrequency: Double = 0.3
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
         val eps: Double = 1.0e-10
         val writer = new PrintWriter(new File("alpha_records.txt"))
+        val errorWriter = new PrintWriter(new File("error.txt"))
         breakable
         {
             while(counter < iterationMax)
             {
                 val alphaOld: ArrayBuffer[Double] = this.alpha.map(ele => ele)
-                if (counter%updateEntireInterval == 0)
+                if (counter%updateEntireInterval == 0 || counter == iterationMax-1)
                 {
                     this.updateEntire
                 }
@@ -288,18 +289,21 @@ class SVM
                         }
                     }
                 }
-                val alphaNew: ArrayBuffer[Double] = this.alpha.map(ele => ele)
-                val error: Double = SVM.norm(SVM.subtract(alphaNew, alphaOld))
+                //val alphaNew: ArrayBuffer[Double] = this.alpha.map(ele => ele)
+                val error: Double = SVM.norm(SVM.subtract(this.alpha, alphaOld))
                 println("Counter = " + counter + ", total = " + iterationMax + ", error = " + error)
+                errorWriter.write(counter.toString + "  " + error.toString + "\n")
                 writer.write("alpha:" + SVM.arrayBufferToString(this.alpha) + "\n")
                 if (error < eps) break
                 counter += 1
             }
         }
+        errorWriter.close()
         writer.close()
         this.getBeta
         val alpha_dot_y = SVM.innerProduct(this.alpha, this.y.map(_.toDouble))
-        assert(abs(alpha_dot_y) < eps)
+        //assert(abs(alpha_dot_y) < eps)
+        println("alpha*y = " + alpha_dot_y)
         val parameterFileName = "final_parameters.txt"
         val finalWriter = new PrintWriter(new File(parameterFileName))
         val beta_0_values: ArrayBuffer[Double] = this.getBeta_0
@@ -577,9 +581,16 @@ object svm_test
             System.exit(-1)
         }
 
+        val t0 = System.nanoTime()
         val inputFileName = args(0)
         val trainRatio = args(1).toDouble
-        val C = 10000
+        val C = 1000
         crossValidation(inputFileName, trainRatio, C)
+        val t1 = System.nanoTime()
+        val timeDiff: Double = (t1 - t0)*1.0e-9
+        println("Total time used in seconds: " + timeDiff)
+        val writer = new PrintWriter(new File("time.txt"))
+        writer.write("Total time used in seconds: " + timeDiff.toString + "\n")
+        writer.close()
     }
 }
