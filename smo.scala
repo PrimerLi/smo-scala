@@ -358,45 +358,57 @@ object SVM
     }
 
     def arrayToString(array: Array[Double]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
-    def sum(a: Array[Double], b: Array[Double]): Array[Double] = a.zip(b).map(pair => pair._1 + pair._2)
-    def sum(a: ArrayBuffer[Double], b: ArrayBuffer[Double]): ArrayBuffer[Double] = a.zip(b).map(pair => pair._1 + pair._2)
+    //def sum(a: Array[Double], b: Array[Double]): Array[Double] = a.zip(b).map(pair => pair._1 + pair._2)
+    //def sum(a: ArrayBuffer[Double], b: ArrayBuffer[Double]): ArrayBuffer[Double] = a.zip(b).map(pair => pair._1 + pair._2)
+    def sum(a: ArrayBuffer[Double], b: ArrayBuffer[Double]): ArrayBuffer[Double] = 
+    {
+        assert(a.length == b.length)
+        val result: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        for (i <- a.indices)
+        {
+            result.append(a(i) + b(i))
+        }
+        result
+    }
+
     def innerProduct(array_1: ArrayBuffer[Double], array_2:ArrayBuffer[Double]):Double = 
     {
         assert(array_1.length == array_2.length)
-        array_1.zip(array_2).map(p => p._1*p._2).reduce(_+_)
-    }
-    /*def innerProduct[T: Numeric](a: ArrayBuffer[T], b: ArrayBuffer[T]): T = 
-    {
-        import Numeric.Implicits._
-        assert(a.length == b.length)
-        var result: T = implicitly[Numeric[T]].zero
-        for (i <- a.indices)
+        //array_1.zip(array_2).map(p => p._1*p._2).reduce(_+_)
+        var result: Double = 0
+        for (i <- array_1.indices)
         {
-            result += a(i)*b(i)
+            result += array_1(i)*array_2(i)
         }
         result
-    }*/
-    def norm(array: ArrayBuffer[Double]): Double = sqrt(innerProduct(array, array))
-    def add(array_1: ArrayBuffer[Double], array_2:ArrayBuffer[Double]): ArrayBuffer[Double] = 
-    {
-        assert(array_1.length == array_2.length)
-        array_1.zip(array_2).map(p => p._1 + p._2)
     }
+
+    def norm(array: ArrayBuffer[Double]): Double = sqrt(innerProduct(array, array))
+
     def subtract(array_1: ArrayBuffer[Double], array_2: ArrayBuffer[Double]): ArrayBuffer[Double] = 
     {
         assert(array_1.length == array_2.length)
-        array_1.zip(array_2).map(p => p._1 - p._2)
+        //array_1.zip(array_2).map(p => p._1 - p._2)
+        val result: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        for (i <- array_1.indices)
+        {
+            result.append(array_1(i) - array_2(i))
+        }
+        result
     }
+
     def mean(array:ArrayBuffer[Double]): Double = 
     {
         assert(array.length > 0)
         array.reduce(_+_)/array.length.toDouble
     }
+
     def mean(array:Array[Double]): Double = 
     {
         assert(array.length > 0)
         array.reduce(_+_)/array.length.toDouble
     }
+
     def clip(alpha: Double, left: Double, right: Double): Double = 
     {
         //assert(left <= right)
@@ -404,7 +416,9 @@ object SVM
         else if (alpha < left) return left
         else return right
     }
+
     def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
+
     def printFile(x: ArrayBuffer[Double], y: ArrayBuffer[Int], header: String, outputFileName: String): Unit = 
     {
         assert(x.length == y.length)
@@ -416,6 +430,34 @@ object SVM
         }
         writer.close()
     }
+
+    def getCurve(x: Double, beta: ArrayBuffer[Double], beta_0: Double, mu: Double): Double = 
+    {
+        assert(beta.length == 2)
+        return (mu - beta_0 - x*beta(0))/beta(1)
+    }
+
+    def generateBoundary(xLower: Double, xUpper: Double, beta: ArrayBuffer[Double], beta_0: Double, mu: Double, outputFileName: String): Unit = 
+    {
+        assert(xLower < xUpper)
+        assert(beta.length == 2)
+        val x: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        val y: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        val cutNumber: Int = 20
+        val delta: Double = (xUpper - xLower)/cutNumber.toDouble
+        for (i <- 0 to cutNumber)
+        {
+            x.append(xLower + i*delta)
+            y.append(getCurve(x(i), beta, beta_0, mu))
+        }
+        val writer = new PrintWriter(new File(outputFileName))
+        for (i <- x.indices)
+        {
+            writer.write(x(i).toString + "  " + y(i).toString + "\n")
+        }
+        writer.close()
+    }
+
     def getConfusionMatrix(predictions: ArrayBuffer[Double], labels: ArrayBuffer[Int], outputFileName: String): ArrayBuffer[ArrayBuffer[Double]] = 
     {
         assert(predictions.length == labels.length)
@@ -461,14 +503,11 @@ object SVM
         writer.write("Incorrect slay rate = " + incorrectSlayRate.toString + "\n")
         result
     }
-}
-
-object svm_test
-{
-    def printLines(header: String, lines: ArrayBuffer[String], start: Int, end: Int, outputFileName: String): Unit = 
+    
+    def printLines(header: String, lines: ArrayBuffer[String], start: Int, end: Int, outputFileName: String): Unit = //includes start, excludes end. 
     {
         assert(start >= 0 && start < end)
-        assert(end < lines.length)
+        assert(end <= lines.length)
         val writer = new PrintWriter(new File(outputFileName))
         writer.write(header + "\n")
         for (i <- start until end)
@@ -477,6 +516,7 @@ object svm_test
         }
         writer.close()
     }
+
     def split(inputFileName: String, trainRatio: Double, trainFileName: String, testFileName: String): Unit = 
     {
         assert(Files.exists(Paths.get(inputFileName)))
@@ -487,6 +527,48 @@ object svm_test
         printLines(header, lines, 0, trainNumber, trainFileName)
         printLines(header, lines, trainNumber, lines.length, testFileName)
     }
+}
+
+object svm_test
+{
+    def crossValidation(inputFileName: String, trainRatio: Double, C: Double): Unit = 
+    {
+        assert(Files.exists(Paths.get(inputFileName)))
+        assert(trainRatio > 0 && trainRatio < 1)
+        assert(C > 0)
+        val trainFileName = "train.csv"
+        val testFileName = "test.csv"
+        println("Splitting the input file ... ")
+        SVM.split(inputFileName, trainRatio, trainFileName, testFileName)
+        println("Splitting finished. ")
+        println("Creating the classifier ... ")
+        val svm = new SVM(trainFileName, C)
+        println("Classifier created. ")
+        val useTwoDimensionalData: Boolean = (svm.numberOfFeatures == 2)
+        println("Training the model ... ")
+        svm.train()
+        println("Model training finished. ")
+        if (useTwoDimensionalData)
+        {
+            val x: ArrayBuffer[Double] = new ArrayBuffer[Double]
+            for (i <- svm.y.indices)
+            {
+                x.append(svm.X(i)(0))
+            }
+            val xLower: Double = x.reduce((a, b) => min(a, b))
+            val xUpper: Double = x.reduce((a, b) => max(a, b))
+            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, -1, "lower_boundary.txt")
+            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 0, "boundary.txt")
+            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 1, "upper_boundary.txt")
+        }
+        else
+        {
+            println("Testing the model ... ")
+            svm.test(testFileName)
+            println("Model testing finished. ")
+        }
+    }
+
     def main(args: Array[String]): Unit = 
     {
         if (args.length != 2)
@@ -494,15 +576,10 @@ object svm_test
             println("inputFileName = args(0), trainRatio = args(1). ")
             System.exit(-1)
         }
+
         val inputFileName = args(0)
         val trainRatio = args(1).toDouble
-        assert(trainRatio > 0 && trainRatio < 1)
-        val trainFileName = "train.csv"
-        val testFileName = "test.csv"
-        split(inputFileName, trainRatio, trainFileName, testFileName)
         val C = 10000
-        val svm = new SVM(trainFileName, C)
-        svm.train()
-        svm.test(testFileName)
+        crossValidation(inputFileName, trainRatio, C)
     }
 }
