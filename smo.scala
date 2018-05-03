@@ -86,13 +86,12 @@ class SVM
 
     def getBeta():Unit = 
     {
-        val temp:ArrayBuffer[Double] = this.alpha.zip(this.y).map(ele => ele._1*ele._2)
+        /*val temp:ArrayBuffer[Double] = this.alpha.zip(this.y).map(ele => ele._1*ele._2)
         this.beta = temp.zip(this.X).map(ele => {
             val alpha_y:Double = ele._1
             val vector:ArrayBuffer[Double] = ele._2
             vector.map(element => element*alpha_y)
-        }).reduce((a, b) => SVM.sum(a, b))
-        /*
+        }).reduce((a, b) => SVM.sum(a, b))*/
         for (i <- this.beta.indices)
         {
             var s: Double = 0
@@ -101,7 +100,7 @@ class SVM
                 s += this.alpha(j)*this.y(j)*this.X(j)(i)
             }
             this.beta(i) = s
-        }*/
+        }
     }
 
     def onBoundary(alpha: Double): Boolean = 
@@ -113,10 +112,19 @@ class SVM
     def getBeta_0(): ArrayBuffer[Double] = 
     {
         val boundaryIndices = this.alpha.indices.filter(index => this.onBoundary(this.alpha(index))).to[ArrayBuffer]
-        val beta_0_values:ArrayBuffer[Double] = boundaryIndices.map(index => this.y(index) - SVM.innerProduct(this.beta, this.X(index)))
-        if (beta_0_values.length == 0) return beta_0_values
-        this.beta_0 = SVM.mean(beta_0_values)
-        return beta_0_values
+        //val beta_0_values:ArrayBuffer[Double] = boundaryIndices.map(index => this.y(index) - SVM.innerProduct(this.beta, this.X(index)))
+        val beta_0_values: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        for (index <- boundaryIndices)
+        {
+            beta_0_values.append(this.y(index) - SVM.innerProduct(this.beta, this.X(index)))
+        }
+        if (beta_0_values.length == 0) 
+            return beta_0_values
+        else
+        {
+            this.beta_0 = SVM.mean(beta_0_values)
+            return beta_0_values
+        }
     }
 
     def get_alpha_2_limit(alpha_1: Double, alpha_2: Double, y_1: Int, y_2: Int):(Double, Double) = 
@@ -301,7 +309,11 @@ class SVM
         errorWriter.close()
         writer.close()
         this.getBeta
-        val alpha_dot_y = SVM.innerProduct(this.alpha, this.y.map(_.toDouble))
+        var alpha_dot_y: Double = 0.0
+        for (i <- this.alpha.indices)
+        {
+            alpha_dot_y += this.alpha(i)*this.y(i)
+        }
         //assert(abs(alpha_dot_y) < eps)
         println("alpha*y = " + alpha_dot_y)
         val parameterFileName = "final_parameters.txt"
