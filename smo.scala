@@ -19,7 +19,8 @@ class SVM
     var beta: ArrayBuffer[Double] = new ArrayBuffer[Double]
     var beta_0: Double = 0
     var pairs: ArrayBuffer[(Int, Int)] = new ArrayBuffer[(Int, Int)]
-
+    val positiveIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+    val negativeIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
 
     def getPairs(n: Int): ArrayBuffer[(Int, Int)] = 
     {
@@ -68,8 +69,23 @@ class SVM
         var (header, lines) = SVM.getLines(inputFileName)
         this.numberOfFeatures = header.split(",").length - 1
         this.numberOfSamples = lines.length
-        this.X = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
-        this.y = lines.map(line => line.split(",").last.toInt)
+        //this.X = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
+        //this.y = lines.map(line => line.split(",").last.toInt)
+        for (i <- lines.indices)
+        {
+            val tempArray = lines(i).split(",")
+            this.X.append(tempArray.dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
+            val label: Int = tempArray.last.toInt
+            this.y.append(label)
+            if (label > 0)
+            {
+                this.positiveIndices.append(i)
+            }
+            else
+            {
+                this.negativeIndices.append(i)
+            }
+        }
         for (i <- 0 until this.numberOfSamples)
         {
             this.alpha.append(0)
@@ -155,12 +171,17 @@ class SVM
 
     def updateEntire():Unit = 
     {
-        val eps = 1.0e-10
-        val eraNumber = 10
-        val sweepTimes = this.pairs.length
-        val interval = sweepTimes/eraNumber
+        val random = new Random
+        val eps: Double = 1.0e-10
+        val eraNumber: Int = 10
+        /*var sweepTimes: Int = this.numberOfSamples
+        sweepTimes = sweepTimes*(sweepTimes - 1)/2 //min(sweepTimes*(sweepTimes - 1)/2, 10000000)
+        val interval: Int = sweepTimes/eraNumber*/
+        val sweepTimes: Int = this.pairs.length
+        val interval: Int = sweepTimes/eraNumber
+        println("sweep time = " + sweepTimes + ", era number = " + eraNumber + ", interval = " + interval)
         this.getBeta
-        for (i <- this.pairs.indices)
+        for (i <- 0 until sweepTimes)
         {
             if (interval == 0)
             {
@@ -170,34 +191,48 @@ class SVM
             {
                 if ((i+1)%interval == 0)
                 {
+                    //println("i = " + (i+1) + ", interval = " + interval + ", remainder = " + (i+1)%interval)
                     println("update entire step index = " + (i+1)/interval + ", total = " + eraNumber)
                 }
             }
             val pair:(Int, Int) = this.pairs(i)
             val first_index: Int = pair._1
             val second_index: Int = pair._2
-            val alpha_1 = this.alpha(first_index)
-            val alpha_2 = this.alpha(second_index)
-            val x_1: ArrayBuffer[Double] = this.X(first_index)
-            val x_2: ArrayBuffer[Double] = this.X(second_index)
-            val y_1: Int = this.y(first_index)
-            val y_2: Int = this.y(second_index)
-            val diff = SVM.norm(SVM.subtract(x_1, x_2))
+            /*val first_index: Int = random.nextInt(this.alpha.length)
+            val second_index: Int = random.nextInt(this.alpha.length)*/
+            //val first_index: Int = this.positiveIndices(random.nextInt(this.positiveIndices.length))
+            //val second_index: Int = this.negativeIndices(random.nextInt(this.negativeIndices.length))
             breakable
             {
-                if (diff < eps) break
+                if (first_index == second_index)
+                    break
                 else
                 {
-                    val(alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
-                    this.alpha(first_index) = alpha_1_new
-                    this.alpha(second_index) = alpha_2_new
-                    val delta_alpha_1 = alpha_1_new - alpha_1
-                    val delta_alpha_2 = alpha_2_new - alpha_2
-                    this.beta = SVM.sum(this.beta, SVM.sum(x_1.map(ele => ele*y_1*delta_alpha_1), x_2.map(ele => ele*y_2*delta_alpha_2)))
-                    /*for (i <- this.beta.indices)
+                    val alpha_1: Double = this.alpha(first_index)
+                    val alpha_2: Double = this.alpha(second_index)
+                    val x_1: ArrayBuffer[Double] = this.X(first_index)
+                    val x_2: ArrayBuffer[Double] = this.X(second_index)
+                    val y_1: Int = this.y(first_index)
+                    val y_2: Int = this.y(second_index)
+                    val diff = SVM.norm(SVM.subtract(x_1, x_2))
+                    breakable
                     {
-                        this.beta(i) = this.beta(i) + delta_alpha_1*y_1*x_1(i) + delta_alpha_2*y_2*x_2(i)
-                    }*/
+                        if (diff < eps) 
+                            break
+                        else
+                        {
+                            val(alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
+                            this.alpha(first_index) = alpha_1_new
+                            this.alpha(second_index) = alpha_2_new
+                            val delta_alpha_1 = alpha_1_new - alpha_1
+                            val delta_alpha_2 = alpha_2_new - alpha_2
+                            //this.beta = SVM.sum(this.beta, SVM.sum(x_1.map(ele => ele*y_1*delta_alpha_1), x_2.map(ele => ele*y_2*delta_alpha_2)))
+                            for (betaIndex <- this.beta.indices)
+                            {
+                                this.beta(betaIndex) = this.beta(betaIndex) + delta_alpha_1*y_1*x_1(betaIndex) + delta_alpha_2*y_2*x_2(betaIndex)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -205,6 +240,12 @@ class SVM
 
     def hasViolatedKKT(alpha: Double, x: ArrayBuffer[Double], y: Int): Boolean = 
     {
+        /*
+         KKT Condition: 
+         if alpha == 0, then value >= 1;
+         if alpha == C, then value <= 1;
+         if 0 < alpha < C, then value == 1;
+         */
         val eps = 1.0e-10
         //assert(abs(alpha) > eps && (this.C - alpha) > eps)
         val value: Double = (SVM.innerProduct(this.beta, x) + this.beta_0)*y
@@ -218,48 +259,108 @@ class SVM
         }
         else 
         {
-            return !(abs(value - 1) < eps)
+            return !(abs(value - 1) < 1.0e-3)
         }
     }
 
     def fastUpdate(): Boolean = 
     {
+        val random = new Random
         val eps = 1.0e-10
         this.getBeta
         this.getBeta_0
-        val possibleIndices:ArrayBuffer[Int] = this.alpha.indices.filter(index => hasViolatedKKT(this.alpha(index), this.X(index), this.y(index))).to[ArrayBuffer]
+        val possibleIndices: ArrayBuffer[Int] = this.alpha.indices.filter(index => hasViolatedKKT(this.alpha(index), this.X(index), this.y(index))).to[ArrayBuffer]
+        /*val possibleIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+        val possiblePositiveIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+        val possibleNegativeIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+        for (index <- this.alpha.indices)
+        {
+            if (hasViolatedKKT(this.alpha(index), this.X(index), this.y(index)))
+            {
+                possibleIndices.append(index)
+                if (this.y(index) > 0)
+                {
+                    possiblePositiveIndices.append(index)
+                }
+                else
+                {
+                    possibleNegativeIndices.append(index)
+                }
+            }
+        }*/
         println("Number of indices that have violated the KKT condition is " + possibleIndices.length)
-        if(possibleIndices.length < 2) return false
-        val nonBoundaryIndices:ArrayBuffer[Int] = possibleIndices.filter(index => !this.onBoundary(this.alpha(index)))
+        if(possibleIndices.length < 2)
+            return false
+        //val nonBoundaryIndices:ArrayBuffer[Int] = possibleIndices.filter(index => !this.onBoundary(this.alpha(index)))
+        val boundaryIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+        val nonBoundaryIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
+        for (index <- possibleIndices)
+        {
+            if (this.onBoundary(this.alpha(index)))
+                boundaryIndices.append(index)
+            else
+                nonBoundaryIndices.append(index)
+        }
         println("Number of non boundary indices that have violated the KKT condition is " + nonBoundaryIndices.length)
+        if (nonBoundaryIndices.length < 2)
+            return false
+        //println("Number of boundary indices that have violated the KKT condition is " + boundaryIndices.length)
         val pairs = this.shuffle(this.getElementPairs(possibleIndices))
-        for (i <- pairs.indices)
+        //val length: Int = nonBoundaryIndices.length
+        //val sweepTimes = length*length
+
+        /*val length: Int = possibleIndices.length
+        val sweepTimes: Int = length*length*/
+
+       val sweepTimes = pairs.length
+        for (i <- 0 until sweepTimes)
         {
             val pair = pairs(i)
             val first_index = pair._1
             val second_index = pair._2
-            val alpha_1 = this.alpha(first_index)
-            val alpha_2 = this.alpha(second_index)
-            val x_1: ArrayBuffer[Double] = this.X(first_index)
-            val x_2: ArrayBuffer[Double] = this.X(second_index)
-            val y_1: Int = this.y(first_index)
-            val y_2: Int = this.y(second_index)
-            val diff = SVM.norm(SVM.subtract(x_1, x_2))
+
+            //val first_index: Int = possiblePositiveIndices(random.nextInt(possiblePositiveIndices.length)) //pair._1
+            //val second_index: Int = possibleNegativeIndices(random.nextInt(possibleNegativeIndices.length)) //pair._2
+
+            /*val first_index: Int = possibleIndices(random.nextInt(possibleIndices.length))
+            val second_index: Int = possibleIndices(random.nextInt(possibleIndices.length))*/
+
+            //val first_index: Int = boundaryIndices(random.nextInt(boundaryIndices.length))
+            //val second_index: Int = boundaryIndices(random.nextInt(boundaryIndices.length))
+
+            //val first_index: Int = nonBoundaryIndices(random.nextInt(nonBoundaryIndices.length))
+            //val second_index: Int = nonBoundaryIndices(random.nextInt(nonBoundaryIndices.length))
             breakable
             {
-                if (diff < eps) break
+                if (first_index == second_index)
+                    break
                 else
                 {
-                    val (alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
-                    this.alpha(first_index) = alpha_1_new
-                    this.alpha(second_index) = alpha_2_new
-                    val delta_alpha_1 = alpha_1_new - alpha_1
-                    val delta_alpha_2 = alpha_2_new - alpha_2
-                    this.beta = SVM.sum(this.beta, SVM.sum(x_1.map(ele => ele*y_1*delta_alpha_1), x_2.map(ele => ele*y_2*delta_alpha_2)))
-                    /*for (i <- this.beta.indices)
+                    val alpha_1: Double = this.alpha(first_index)
+                    val alpha_2: Double = this.alpha(second_index)
+                    val x_1: ArrayBuffer[Double] = this.X(first_index)
+                    val x_2: ArrayBuffer[Double] = this.X(second_index)
+                    val y_1: Int = this.y(first_index)
+                    val y_2: Int = this.y(second_index)
+                    val diff = SVM.norm(SVM.subtract(x_1, x_2))
+                    breakable
                     {
-                        this.beta(i) = this.beta(i) + delta_alpha_1*y_1*x_1(i) + delta_alpha_2*y_2*x_2(i)
-                    }*/
+                        if (diff < eps) 
+                            break
+                        else
+                        {
+                            val (alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
+                            this.alpha(first_index) = alpha_1_new
+                            this.alpha(second_index) = alpha_2_new
+                            val delta_alpha_1 = alpha_1_new - alpha_1
+                            val delta_alpha_2 = alpha_2_new - alpha_2
+                            //this.beta = SVM.sum(this.beta, SVM.sum(x_1.map(ele => ele*y_1*delta_alpha_1), x_2.map(ele => ele*y_2*delta_alpha_2)))
+                            for (i <- this.beta.indices)
+                            {
+                                this.beta(i) = this.beta(i) + delta_alpha_1*y_1*x_1(i) + delta_alpha_2*y_2*x_2(i)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -268,7 +369,7 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 50
+        val iterationMax: Int = 20
         var counter: Int = 0
         val updateEntireFrequency: Double = 0.3
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
@@ -287,7 +388,7 @@ class SVM
                 else
                 {
                     var tempCounter: Int = 0
-                    val tempCounterMax: Int = 20
+                    val tempCounterMax: Int = 5
                     breakable
                     {
                         while(this.fastUpdate)
@@ -299,7 +400,7 @@ class SVM
                 }
                 //val alphaNew: ArrayBuffer[Double] = this.alpha.map(ele => ele)
                 val error: Double = SVM.norm(SVM.subtract(this.alpha, alphaOld))
-                println("Counter = " + counter + ", total = " + iterationMax + ", error = " + error)
+                println("Counter = " + (counter+1).toString + ", total = " + iterationMax + ", error = " + error)
                 errorWriter.write(counter.toString + "  " + error.toString + "\n")
                 writer.write("alpha:" + SVM.arrayBufferToString(this.alpha) + "\n")
                 if (error < eps) break
@@ -517,6 +618,7 @@ object SVM
         writer.write(falsePositive.toString + "  " + truePositive.toString + "\n")
         writer.write("Capture rate = " + captureRate.toString + "\n")
         writer.write("Incorrect slay rate = " + incorrectSlayRate.toString + "\n")
+        writer.close()
         result
     }
     
@@ -577,26 +679,31 @@ object svm_test
             SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 0, "boundary.txt")
             SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 1, "upper_boundary.txt")
         }
-        else
+        /*else
         {
             println("Testing the model ... ")
             svm.test(testFileName)
             println("Model testing finished. ")
-        }
+        }*/
+
+        println("Testing the model ... ")
+        svm.test(testFileName)
+        println("Model testing finished. ")
     }
 
     def main(args: Array[String]): Unit = 
     {
-        if (args.length != 2)
+        if (args.length != 3)
         {
-            println("inputFileName = args(0), trainRatio = args(1). ")
+            println("inputFileName = args(0), trainRatio = args(1), C = args(2). ")
             System.exit(-1)
         }
 
         val t0 = System.nanoTime()
         val inputFileName = args(0)
         val trainRatio = args(1).toDouble
-        val C = 1000
+        val C = args(2).toDouble
+        assert(C > 0)
         crossValidation(inputFileName, trainRatio, C)
         val t1 = System.nanoTime()
         val timeDiff: Double = (t1 - t0)*1.0e-9
