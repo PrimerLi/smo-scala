@@ -95,7 +95,8 @@ class SVM
             this.beta.append(0)
         }
         this.beta_0 = 0
-        this.pairs = this.shuffle(this.getPairs(this.numberOfSamples))
+        this.pairs = this.getPairs(this.numberOfSamples)
+        //this.pairs = this.shuffle(this.getPairs(this.numberOfSamples))
         //this.pairs.foreach(p => println(p._1 + ", " + p._2))
         this.C = C
     }
@@ -179,7 +180,7 @@ class SVM
         val interval: Int = sweepTimes/eraNumber*/
         val sweepTimes: Int = this.pairs.length
         val interval: Int = sweepTimes/eraNumber
-        println("sweep time = " + sweepTimes + ", era number = " + eraNumber + ", interval = " + interval)
+        println("Sweep times = " + sweepTimes + ", era number = " + eraNumber + ", interval = " + interval)
         this.getBeta
         for (i <- 0 until sweepTimes)
         {
@@ -195,7 +196,7 @@ class SVM
                     println("update entire step index = " + (i+1)/interval + ", total = " + eraNumber)
                 }
             }
-            val pair:(Int, Int) = this.pairs(i)
+            val pair:(Int, Int) = this.pairs(random.nextInt(this.pairs.length))
             val first_index: Int = pair._1
             val second_index: Int = pair._2
             /*val first_index: Int = random.nextInt(this.alpha.length)
@@ -302,8 +303,9 @@ class SVM
                 nonBoundaryIndices.append(index)
         }
         println("Number of non boundary indices that have violated the KKT condition is " + nonBoundaryIndices.length)
-        if (nonBoundaryIndices.length < 2)
+        /*if (nonBoundaryIndices.length < 2)
             return false
+        */
         //println("Number of boundary indices that have violated the KKT condition is " + boundaryIndices.length)
         val pairs = this.shuffle(this.getElementPairs(possibleIndices))
         //val length: Int = nonBoundaryIndices.length
@@ -369,7 +371,7 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 20
+        val iterationMax: Int = 70
         var counter: Int = 0
         val updateEntireFrequency: Double = 0.3
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
@@ -534,7 +536,14 @@ object SVM
         else return right
     }
 
-    def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
+    def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String =
+    {
+        array.length match
+        {
+            case 0 => "NULL ArrayBuffer"
+            case _ => return array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
+        }
+    }
 
     def printFile(x: ArrayBuffer[Double], y: ArrayBuffer[Int], header: String, outputFileName: String): Unit = 
     {
