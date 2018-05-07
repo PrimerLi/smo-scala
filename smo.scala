@@ -15,7 +15,9 @@ class SVM
     var X: ArrayBuffer[ArrayBuffer[Double]] = new ArrayBuffer[ArrayBuffer[Double]]
     var y: ArrayBuffer[Int] = new ArrayBuffer[Int]
     var alpha: ArrayBuffer[Double] = new ArrayBuffer[Double]
-    var C: Double = 0
+    var C: Double = 0.0
+    var CNegative: Double = 0.0
+    var CPositive: Double = 0.0
     var beta: ArrayBuffer[Double] = new ArrayBuffer[Double]
     var beta_0: Double = 0
     var pairs: ArrayBuffer[(Int, Int)] = new ArrayBuffer[(Int, Int)]
@@ -62,10 +64,11 @@ class SVM
         array
     }
 
-    def this(inputFileName: String, C: Double)
+    def this(inputFileName: String, C: Double, positiveFactor: Double)
     {
         this()
         assert(C > 0)
+        assert(positiveFactor >= 1.0)
         var (header, lines) = SVM.getLines(inputFileName)
         this.numberOfFeatures = header.split(",").length - 1
         this.numberOfSamples = lines.length
@@ -98,6 +101,13 @@ class SVM
         this.pairs = this.shuffle(this.getPairs(this.numberOfSamples))
         //this.pairs.foreach(p => println(p._1 + ", " + p._2))
         this.C = C
+        this.CNegative = C
+        this.CPositive = C*positiveFactor
+    }
+
+    def this(inputFileName: String, C: Double)
+    {
+        this(inputFileName, C, 1.0)
     }
 
     def getBeta():Unit = 
@@ -125,9 +135,27 @@ class SVM
         abs(alpha) > eps && abs(alpha - this.C) > eps
     }
 
+    def onBoundary(alpha: Double, y: Int): Boolean = 
+    {
+        val eps = 1.0e-10
+        y > 0 match
+        {
+            case true => abs(alpha) > eps && abs(alpha - this.CPositive) > eps
+            case _ => abs(alpha) > eps && abs(alpha - this.CNegative) > eps
+        }
+        /*if (y > 0)
+        {
+            abs(alpha) > eps && abs(alpha - this.CPositive) > eps
+        }
+        else
+        {
+            abs(alpha) > eps && abs(alpha - this.CNegative) > eps
+        }*/
+    }
+
     def getBeta_0(): ArrayBuffer[Double] = 
     {
-        val boundaryIndices = this.alpha.indices.filter(index => this.onBoundary(this.alpha(index))).to[ArrayBuffer]
+        val boundaryIndices = this.alpha.indices.filter(index => this.onBoundary(this.alpha(index), this.y(index))).to[ArrayBuffer]
         //val beta_0_values:ArrayBuffer[Double] = boundaryIndices.map(index => this.y(index) - SVM.innerProduct(this.beta, this.X(index)))
         val beta_0_values: ArrayBuffer[Double] = new ArrayBuffer[Double]
         for (index <- boundaryIndices)
@@ -159,11 +187,52 @@ class SVM
         }
     }
 
+    def get_alpha_2_limit(alpha_1: Double, alpha_2: Double, y_1: Int, y_2: Int, C_1: Double, C_2: Double): (Double, Double) = 
+    {
+        val s: Int = y_1*y_2
+        assert(s == 1 || s == -1)
+        if (s == -1)
+        {
+            val k = alpha_1 - alpha_2
+            if (y_1 > 0)
+            {
+                assert(C_1 >= C_2)
+                if (C_1 - C_2 <= k && k <= C_1) return (0, C_1 - k)
+                else if (0 <= k && k <= C_1 - C_2) return (0, C_2)
+                else return (-k, C_2)
+            }
+            else//y_1 == -1 and y_2 == 1. 
+            {
+                assert(C_2 >= C_1)
+                if (0 <= k && k <= C_1) return (0, C_1 - k) 
+                else if (C_1 - C_2 <= k && k <= 0) return (-k, C_1 - k)
+                else return (-k, C_2)
+                //return get_alpha_2_limit(alpha_2, alpha_1, y_2, y_1, C_2, C_1)
+            }
+        }
+        else
+        {
+            assert(C_1 == C_2)
+            val k = alpha_1 + alpha_2
+            return (max(0, k - C_1), min(C_1, k))
+        }
+    }
+
     def jointOptimize(alpha_1: Double, alpha_2: Double, x_1: ArrayBuffer[Double], x_2:ArrayBuffer[Double], y_1: Int, y_2: Int, norm: Double): (Double, Double) = 
     {
         val eta: Double = norm*norm
         val alpha_2_star: Double = alpha_2 + y_2*(SVM.innerProduct(this.beta, x_1) - y_1 - (SVM.innerProduct(this.beta, x_2) - y_2))/eta
         val (left, right) = this.get_alpha_2_limit(alpha_1, alpha_2, y_1, y_2)
+        val alpha_2_new = SVM.clip(alpha_2_star, left, right)
+        val alpha_1_new = alpha_1 - y_1*y_2*(alpha_2_new - alpha_2)
+        (alpha_1_new, alpha_2_new)
+    }
+
+    def jointOptimize(alpha_1: Double, alpha_2: Double, x_1: ArrayBuffer[Double], x_2: ArrayBuffer[Double], y_1: Int, y_2: Int, C_1: Double, C_2: Double, norm: Double): (Double, Double) = 
+    {
+        val eta: Double = norm*norm
+        val alpha_2_star: Double = alpha_2 + y_2*(SVM.innerProduct(this.beta, x_1) - y_1 - (SVM.innerProduct(this.beta, x_2) - y_2))/eta
+        val (left, right) = this.get_alpha_2_limit(alpha_1, alpha_2, y_1, y_2, C_1, C_2)
         val alpha_2_new = SVM.clip(alpha_2_star, left, right)
         val alpha_1_new = alpha_1 - y_1*y_2*(alpha_2_new - alpha_2)
         (alpha_1_new, alpha_2_new)
@@ -214,6 +283,8 @@ class SVM
                     val x_2: ArrayBuffer[Double] = this.X(second_index)
                     val y_1: Int = this.y(first_index)
                     val y_2: Int = this.y(second_index)
+                    val C_1: Double = if (y_1 > 0) this.CPositive else this.CNegative
+                    val C_2: Double = if (y_2 > 0) this.CPositive else this.CNegative
                     val diff = SVM.norm(SVM.subtract(x_1, x_2))
                     breakable
                     {
@@ -221,7 +292,8 @@ class SVM
                             break
                         else
                         {
-                            val(alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
+                            val(alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, C_1, C_2, diff)
+                            //val(alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
                             this.alpha(first_index) = alpha_1_new
                             this.alpha(second_index) = alpha_2_new
                             val delta_alpha_1 = alpha_1_new - alpha_1
@@ -246,6 +318,7 @@ class SVM
          if alpha == C, then value <= 1;
          if 0 < alpha < C, then value == 1;
          */
+        val C_alpha: Double = if (y > 0) this.CPositive else this.CNegative
         val eps = 1.0e-10
         //assert(abs(alpha) > eps && (this.C - alpha) > eps)
         val value: Double = (SVM.innerProduct(this.beta, x) + this.beta_0)*y
@@ -253,7 +326,7 @@ class SVM
         {
             return !(value >= 1)
         }
-        else if (abs(alpha - this.C) < eps)
+        else if (abs(alpha - C_alpha) < eps)
         {
             return !(value <= 1)
         }
@@ -296,7 +369,7 @@ class SVM
         val nonBoundaryIndices: ArrayBuffer[Int] = new ArrayBuffer[Int]
         for (index <- possibleIndices)
         {
-            if (this.onBoundary(this.alpha(index)))
+            if (this.onBoundary(this.alpha(index), this.y(index)))
                 boundaryIndices.append(index)
             else
                 nonBoundaryIndices.append(index)
@@ -343,6 +416,8 @@ class SVM
                     val x_2: ArrayBuffer[Double] = this.X(second_index)
                     val y_1: Int = this.y(first_index)
                     val y_2: Int = this.y(second_index)
+                    val C_1: Double = if (y_1 > 0) this.CPositive else this.CNegative
+                    val C_2: Double = if (y_2 > 0) this.CPositive else this.CNegative
                     val diff = SVM.norm(SVM.subtract(x_1, x_2))
                     breakable
                     {
@@ -350,7 +425,7 @@ class SVM
                             break
                         else
                         {
-                            val (alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, diff)
+                            val (alpha_1_new, alpha_2_new) = this.jointOptimize(alpha_1, alpha_2, x_1, x_2, y_1, y_2, C_1, C_2, diff)
                             this.alpha(first_index) = alpha_1_new
                             this.alpha(second_index) = alpha_2_new
                             val delta_alpha_1 = alpha_1_new - alpha_1
@@ -661,7 +736,9 @@ object svm_test
         SVM.split(inputFileName, trainRatio, trainFileName, testFileName)
         println("Splitting finished. ")
         println("Creating the classifier ... ")
-        val svm = new SVM(trainFileName, C)
+        val positiveFactor: Double = 1.0
+        val svm = new SVM(trainFileName, C, positiveFactor)
+        /*println("Initial alpha:" + SVM.arrayBufferToString(svm.alpha))*/
         println("Classifier created. ")
         val useTwoDimensionalData: Boolean = (svm.numberOfFeatures == 2)
         println("Training the model ... ")
