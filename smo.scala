@@ -455,17 +455,21 @@ class SVM
         val writer = new PrintWriter(new File("alpha_records.txt"))
         val errorWriter = new PrintWriter(new File("error.txt"))
         val initialParameterFileName = "final_parameters.txt"
+        var useInitialParameter: Boolean = false
         if (Files.exists(Paths.get("final_parameters.txt")))
         {
             val lines: Array[String] = Source.fromFile("final_parameters.txt").getLines.to[Array]
             val initial_alpha: ArrayBuffer[Double] = lines(0).split(":")(1).split(",").map(ele => ele.toDouble).to[ArrayBuffer]
-            assert(this.alpha.length == initial_alpha.length)
-            for (i <- initial_alpha.indices)
+            if (this.alpha.length == initial_alpha.length)
             {
-                this.alpha(i) = initial_alpha(i)
+                useInitialParameter = true
+                for (i <- initial_alpha.indices)
+                {
+                    this.alpha(i) = initial_alpha(i)
+                }
+                this.getBeta
+                this.getBeta_0
             }
-            this.getBeta
-            this.getBeta_0
         }
         breakable
         {
