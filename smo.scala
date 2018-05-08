@@ -447,7 +447,7 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 20
+        val iterationMax: Int = 50
         var counter: Int = 0
         val updateEntireFrequency: Double = 0.02
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
@@ -776,7 +776,7 @@ object SVM
 
 object svm_test
 {
-    def crossValidation(inputFileName: String, trainRatio: Double, C: Double): Unit = 
+    def crossValidation(inputFileName: String, trainRatio: Double, C: Double, positiveFactor: Double): Unit = 
     {
         assert(Files.exists(Paths.get(inputFileName)))
         assert(trainRatio > 0 && trainRatio < 1)
@@ -792,7 +792,7 @@ object svm_test
         println("Number of positive samples = " + numberOfPositiveSamples)
         println("Number of negative samples = " + numberOfNegativeSamples)
         //val positiveFactor: Double = numberOfNegativeSamples.toDouble/numberOfPositiveSamples.toDouble
-        val positiveFactor: Double = 2.5
+        //val positiveFactor: Double = 1.8
         assert(positiveFactor >= 1.0)
         println("positiveFactor = " + positiveFactor)
         println("Creating the classifier ... ")
@@ -833,9 +833,9 @@ object svm_test
 
     def main(args: Array[String]): Unit = 
     {
-        if (args.length != 3)
+        if (args.length != 4)
         {
-            println("inputFileName = args(0), trainRatio = args(1), C = args(2). ")
+            println("inputFileName = args(0), trainRatio = args(1), C = args(2), positiveFactor = args(3). ")
             System.exit(-1)
         }
 
@@ -843,8 +843,10 @@ object svm_test
         val inputFileName = args(0)
         val trainRatio = args(1).toDouble
         val C = args(2).toDouble
+        val positiveFactor: Double = args(3).toDouble
         assert(C > 0)
-        crossValidation(inputFileName, trainRatio, C)
+        assert(positiveFactor >= 1.0)
+        crossValidation(inputFileName, trainRatio, C, positiveFactor)
         val t1 = System.nanoTime()
         val timeDiff: Double = (t1 - t0)*1.0e-9
         println("Total time used in seconds: " + timeDiff)
