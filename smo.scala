@@ -447,22 +447,37 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 50
+        val iterationMax: Int = 20
         var counter: Int = 0
         val updateEntireFrequency: Double = 0.02
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
         val eps: Double = 1.0e-10
         val writer = new PrintWriter(new File("alpha_records.txt"))
         val errorWriter = new PrintWriter(new File("error.txt"))
+        val initialParameterFileName = "final_parameters.txt"
+        if (Files.exists(Paths.get("final_parameters.txt")))
+        {
+            val lines: Array[String] = Source.fromFile("final_parameters.txt").getLines.to[Array]
+            val initial_alpha: ArrayBuffer[Double] = lines(0).split(":")(1).split(",").map(ele => ele.toDouble).to[ArrayBuffer]
+            assert(this.alpha.length == initial_alpha.length)
+            for (i <- initial_alpha.indices)
+            {
+                this.alpha(i) = initial_alpha(i)
+            }
+            this.getBeta
+            this.getBeta_0
+        }
         breakable
         {
             while(counter < iterationMax)
             {
                 val alphaOld: ArrayBuffer[Double] = this.alpha.map(ele => ele)
-                if (counter%updateEntireInterval == 0 || counter == iterationMax-1)
+                /*if (counter%updateEntireInterval == 0 || counter == iterationMax-1)
                 {
                     this.updateEntire
-                }
+                }*/
+                if (counter == 0) 
+                    this.updateEntire
                 else
                 {
                     var tempCounter: Int = 0
@@ -504,6 +519,27 @@ class SVM
         finalWriter.write("beta_0:" + this.beta_0.toString + "\n")
         finalWriter.write("alpha_dot_y:" + alpha_dot_y.toString + "\n")
         finalWriter.close()
+    }
+
+    def anneal(increaseRatio: Double, upperLimit: Double): Unit = 
+    {
+        assert(increaseRatio > 1.0)
+        val parameterFileName: String = "final_parameters.txt"
+        if (Files.exists(Paths.get(parameterFileName)))
+        {
+            ("rm -r " + parameterFileName).!
+        }
+        var counter: Int = 0
+        while(this.C < upperLimit)
+        {
+            counter += 1
+            println("*********************** counter = " + counter + ", C = " + this.C + ", increaseRatio = " + increaseRatio + ", upper limit = " + upperLimit + " *******************************")
+            this.train()
+            ("cp final_parameters.txt " + "parameters_C_" + "%.2f".format(this.C) + ".txt").!
+            this.C = this.C*increaseRatio
+            this.CNegative = this.C
+            this.CPositive = this.CPositive*increaseRatio
+        }
     }
 
     def test(testFileName: String): Unit = 
@@ -766,6 +802,9 @@ object svm_test
         val useTwoDimensionalData: Boolean = (svm.numberOfFeatures == 2)
         println("Training the model ... ")
         svm.train()
+        /*val increaseRatio: Double = 3.0
+        val upperLimit: Double = 100000.00
+        svm.anneal(increaseRatio, upperLimit)*/
         println("Model training finished. ")
         if (useTwoDimensionalData)
         {
