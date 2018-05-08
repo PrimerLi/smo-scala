@@ -98,7 +98,7 @@ class SVM
             this.beta.append(0)
         }
         this.beta_0 = 0
-        this.pairs = this.shuffle(this.getPairs(this.numberOfSamples))
+        //this.pairs = this.shuffle(this.getPairs(this.numberOfSamples))
         //this.pairs.foreach(p => println(p._1 + ", " + p._2))
         this.C = C
         this.CNegative = C
@@ -246,8 +246,10 @@ class SVM
         /*var sweepTimes: Int = this.numberOfSamples
         sweepTimes = sweepTimes*(sweepTimes - 1)/2 //min(sweepTimes*(sweepTimes - 1)/2, 10000000)
         val interval: Int = sweepTimes/eraNumber*/
-        val sweepTimes: Int = this.pairs.length
-        val interval: Int = sweepTimes/eraNumber
+        /*val sweepTimes: Int = this.pairs.length
+        val interval: Int = sweepTimes/eraNumber*/
+       val sweepTimes: Int = this.numberOfSamples*this.numberOfSamples
+       val interval: Int = sweepTimes/eraNumber
         println("sweep time = " + sweepTimes + ", era number = " + eraNumber + ", interval = " + interval)
         this.getBeta
         for (i <- 0 until sweepTimes)
@@ -264,11 +266,11 @@ class SVM
                     println("update entire step index = " + (i+1)/interval + ", total = " + eraNumber)
                 }
             }
-            val pair:(Int, Int) = this.pairs(i)
+            /*val pair:(Int, Int) = this.pairs(i)
             val first_index: Int = pair._1
-            val second_index: Int = pair._2
-            /*val first_index: Int = random.nextInt(this.alpha.length)
-            val second_index: Int = random.nextInt(this.alpha.length)*/
+            val second_index: Int = pair._2*/
+            val first_index: Int = random.nextInt(this.alpha.length)
+            val second_index: Int = random.nextInt(this.alpha.length)
             //val first_index: Int = this.positiveIndices(random.nextInt(this.positiveIndices.length))
             //val second_index: Int = this.negativeIndices(random.nextInt(this.negativeIndices.length))
             breakable
@@ -445,9 +447,9 @@ class SVM
 
     def train(): Unit = 
     {
-        val iterationMax: Int = 20
+        val iterationMax: Int = 50
         var counter: Int = 0
-        val updateEntireFrequency: Double = 0.3
+        val updateEntireFrequency: Double = 0.02
         val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt
         val eps: Double = 1.0e-10
         val writer = new PrintWriter(new File("alpha_records.txt"))
@@ -547,7 +549,13 @@ object SVM
         var (header:String, lines:ArrayBuffer[String]) = SVM.getLines(inputFileName)
         val data: ArrayBuffer[ArrayBuffer[Double]] = lines.map(line => line.split(",").dropRight(1).map(ele => ele.toDouble).to[ArrayBuffer])
         val label: ArrayBuffer[Int] = lines.map(line => line.split(",").last.toInt)
-        return (data, label)
+        (data, label)
+    }
+
+    def getLabels(inputFileName: String): ArrayBuffer[Int] = 
+    {
+        val (header: String, lines: ArrayBuffer[String]) = SVM.getLines(inputFileName)
+        lines.map(line => line.split(",").last.toInt)
     }
 
     def arrayToString(array: Array[Double]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
@@ -610,7 +618,14 @@ object SVM
         else return right
     }
 
-    def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String = array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
+    def arrayBufferToString[T: Numeric](array:ArrayBuffer[T]): String =
+    {
+        array.length match
+        {
+            case 0 => "Empty ArrayBuffer"
+            case _ => array.map(ele => ele.toString).reduce((a, b) => a + "," + b)
+        }
+    }
 
     def printFile(x: ArrayBuffer[Double], y: ArrayBuffer[Int], header: String, outputFileName: String): Unit = 
     {
@@ -735,8 +750,16 @@ object svm_test
         println("Splitting the input file ... ")
         SVM.split(inputFileName, trainRatio, trainFileName, testFileName)
         println("Splitting finished. ")
+        val labels: ArrayBuffer[Int] = SVM.getLabels(trainFileName)
+        val numberOfNegativeSamples: Int = labels.filter(label => label == -1).length
+        val numberOfPositiveSamples: Int = labels.filter(label => label == 1).length
+        println("Number of positive samples = " + numberOfPositiveSamples)
+        println("Number of negative samples = " + numberOfNegativeSamples)
+        //val positiveFactor: Double = numberOfNegativeSamples.toDouble/numberOfPositiveSamples.toDouble
+        val positiveFactor: Double = 2.5
+        assert(positiveFactor >= 1.0)
+        println("positiveFactor = " + positiveFactor)
         println("Creating the classifier ... ")
-        val positiveFactor: Double = 1.0
         val svm = new SVM(trainFileName, C, positiveFactor)
         /*println("Initial alpha:" + SVM.arrayBufferToString(svm.alpha))*/
         println("Classifier created. ")
