@@ -388,7 +388,7 @@ class SVM
         /*val length: Int = possibleIndices.length
         val sweepTimes: Int = length*length*/
 
-       val sweepTimes = pairs.length
+        val sweepTimes = pairs.length
         for (i <- 0 until sweepTimes)
         {
             val pair = pairs(i)
@@ -558,6 +558,260 @@ class SVM
     }
 }
 
+class SVMGaussKernel(inputFileName: String, C: Double, positiveFactor: Double) extends SVM(inputFileName, C, positiveFactor)
+{
+    val Q: ArrayBuffer[Double] = new ArrayBuffer[Double]
+    var sigma: Double = 0.0
+    for (i <- this.alpha.indices)
+    {
+        Q.append(0.0)
+    }
+
+    def this(inputFileName: String, C: Double, positiveFactor: Double, sigma: Double)
+    {
+        this(inputFileName, C, positiveFactor)
+        this.sigma = sigma
+    }
+    
+    def getQ(): Unit = //Q(j) = beta.dot(X(j))
+    {
+        for (j <- this.Q.indices)
+        {
+            var s: Double = 0.0
+            for (i <- this.alpha.indices)
+            {
+                s += this.alpha(i)*this.y(i)*SVM.GaussKernel(this.X(i), this.X(j), this.sigma)
+            }
+            this.Q(j) = s
+        }
+    }
+
+    override def getBeta_0(): ArrayBuffer[Double] = 
+    {
+        val boundaryIndices = this.alpha.indices.filter(index => super.onBoundary(this.alpha(index), this.y(index))).to[ArrayBuffer]
+        val beta_0_values: ArrayBuffer[Double] = new ArrayBuffer[Double]
+        for (index <- boundaryIndices)
+        {
+            beta_0_values.append(this.y(index) - this.Q(index))
+        }
+        if (beta_0_values.length == 0)
+            return beta_0_values
+        else
+        {
+            this.beta_0 = SVM.mean(beta_0_values)
+            return beta_0_values
+        }
+    }
+
+    def hasViolatedKKT(index: Int): Boolean = 
+    {
+        /*
+         KKT Condition: 
+         if alpha == 0, then value >= 1;
+         if alpha == C, then value <= 1;
+         if 0 < alpha < C, then value == 1;
+         */
+        val C_alpha: Double = if (this.y(index) > 0) this.CPositive else this.CNegative
+        val eps = 1.0e-10
+        //assert(abs(alpha) > eps && (this.C - alpha) > eps)
+        val value: Double = (this.Q(index) + this.beta_0)*this.y(index)
+        if (abs(this.alpha(index)) < eps)
+        {
+            return !(value >= 1)
+        }
+        else if (abs(this.alpha(index) - C_alpha) < eps)
+        {
+            return !(value <= 1)
+        }
+        else 
+        {
+            return !(abs(value - 1) < 1.0e-3)
+        }
+    }
+
+    def updateKernel(first_index: Int, second_index: Int): Unit = 
+    {
+        if (first_index == second_index) return
+        val alpha_1 = this.alpha(first_index)
+        val alpha_2 = this.alpha(second_index)
+        val x_1: ArrayBuffer[Double] = this.X(first_index)
+        val x_2: ArrayBuffer[Double] = this.X(second_index)
+        val y_1: Int = this.y(first_index)
+        val y_2: Int = this.y(second_index)
+        val C_1: Double = if (y_1 > 0) this.CPositive else this.CNegative
+        val C_2: Double = if (y_2 > 0) this.CPositive else this.CNegative
+        var s: Double = 0.0
+        for (i <- x_1.indices)
+        {
+            s += (x_1(i) - x_2(i))*(x_1(i) - x_2(i))
+        }
+        val eps = 1.0e-10
+        if (s < eps) return
+        val eta: Double = 2.0*(1 - exp(-s/(2*this.sigma*this.sigma)))
+        val alpha_2_star: Double = alpha_2 + y_2*((this.Q(first_index) - y_1) - (this.Q(second_index) - y_2))/eta
+        val (left, right) = this.get_alpha_2_limit(alpha_1, alpha_2, y_1, y_2, C_1, C_2)
+        val alpha_2_new = SVM.clip(alpha_2_star, left, right)
+        val alpha_1_new = alpha_1 - y_1*y_2*(alpha_2_new - alpha_2)
+        this.alpha(first_index) = alpha_1_new
+        this.alpha(second_index) = alpha_2_new
+        val delta_alpha_1: Double = alpha_1_new - alpha_1
+        val delta_alpha_2: Double = alpha_2_new - alpha_2
+        for (i <- this.Q.indices)
+        {
+            this.Q(i) = this.Q(i) + delta_alpha_1*y_1*SVM.GaussKernel(x_1, this.X(i), this.sigma) + delta_alpha_2*y_2*SVM.GaussKernel(x_2, this.X(i), this.sigma)
+        }
+    }
+ 
+    override def updateEntire(): Unit = 
+    {
+        val random = new Random
+        println("Getting Q ... ")
+        this.getQ
+        println("Q calculation done. ")
+        val sweepTimes: Int = this.alpha.length*this.alpha.length
+        val eraNumber: Int = 10
+        val interval: Int = sweepTimes/eraNumber
+        println("Sweep times = " + sweepTimes + ", eraNumber = "  +eraNumber + ", interval = " + interval)
+        for (i <- 0 until sweepTimes)
+        {
+            if (interval == 0)
+            {
+                println("i = " + (i+1) + ", total = " + sweepTimes)
+            }
+            else
+            {
+                if ((i+1)%interval == 0)
+                {
+                    println("step index = " + ((i+1)/interval).toString + ", total = " + eraNumber)
+                }
+            }
+            val first_index: Int = random.nextInt(this.alpha.length)
+            val second_index: Int = random.nextInt(this.alpha.length)
+            this.updateKernel(first_index, second_index)
+        }
+    }
+
+    override def fastUpdate(): Boolean = 
+    {
+        val random = new Random
+        val eps = 1.0e-10
+        this.getQ
+        this.getBeta_0
+        val possibleIndices: ArrayBuffer[Int] = this.alpha.indices.filter(index => this.hasViolatedKKT(index)).to[ArrayBuffer]
+        println("Number of indices that violated the KKT condition: " + possibleIndices.length)
+        if (possibleIndices.length < 2) return false
+        val boundaryIndices: ArrayBuffer[Int] = possibleIndices.filter(index => this.onBoundary(this.alpha(index), this.y(index))).to[ArrayBuffer]
+        println("Number of non-boundary indices that have violated the KKT condition is " + (possibleIndices.length - boundaryIndices.length))
+        val pairs = this.shuffle(this.getElementPairs(possibleIndices))
+
+        val sweepTimes = pairs.length
+        for (i <- 0 until sweepTimes)
+        {
+            val pair = pairs(i)
+            val first_index = pair._1
+            val second_index = pair._2
+            this.updateKernel(first_index, second_index)
+        }
+        return true
+    }
+
+    override def train(): Unit =
+    {
+        val iterationMax: Int = 50
+        var counter: Int = 0
+        /*val updateEntireFrequency: Double = 0.02
+        val updateEntireInterval: Int = (1.0/updateEntireFrequency).toInt*/
+        val eps: Double = 1.0e-10
+        val writer = new PrintWriter(new File("alpha_records.txt"))
+        val errorWriter = new PrintWriter(new File("error.txt"))
+        val initialParameterFileName = "final_parameters.txt"
+        var useInitialParameter: Boolean = false
+        if (Files.exists(Paths.get("final_parameters.txt")))
+        {
+            val lines: Array[String] = Source.fromFile("final_parameters.txt").getLines.to[Array]
+            val initial_alpha: ArrayBuffer[Double] = lines(0).split(":")(1).split(",").map(ele => ele.toDouble).to[ArrayBuffer]
+            if (this.alpha.length == initial_alpha.length)
+            {
+                useInitialParameter = true
+                for (i <- initial_alpha.indices)
+                {
+                    this.alpha(i) = initial_alpha(i)
+                }
+                this.getBeta
+                this.getBeta_0
+            }
+        }
+        breakable
+        {
+            while(counter < iterationMax)
+            {
+                val alphaOld: ArrayBuffer[Double] = this.alpha.map(ele => ele)
+                if (counter == 0)
+                    this.updateEntire
+                else
+                {
+                    var tempCounter: Int = 0
+                    val tempCounterMax: Int = 5
+                    breakable
+                    {
+                        while(this.fastUpdate)
+                        {
+                            tempCounter += 1
+                            if (tempCounter >= tempCounterMax) break
+                        }
+                    }
+                }
+                val error: Double = SVM.norm(SVM.subtract(this.alpha, alphaOld))
+                println("Counter = " + (counter+1).toString + ", total = " + iterationMax + ", error = " + error)
+                errorWriter.write(counter.toString + "  " + error.toString + "\n")
+                writer.write("alpha:" + SVM.arrayBufferToString(this.alpha) + "\n")
+                if (error < eps) break
+                counter += 1
+            }
+        }
+        errorWriter.close()
+        writer.close()
+        this.getQ
+        var alpha_dot_y: Double = 0.0
+        for (i <- this.alpha.indices)
+        {
+            alpha_dot_y += this.alpha(i)*this.y(i)
+        }
+        //assert(abs(alpha_dot_y) < eps)
+        println("alpha*y = " + alpha_dot_y)
+        val parameterFileName = "final_parameters.txt"
+        val finalWriter = new PrintWriter(new File(parameterFileName))
+        val beta_0_values: ArrayBuffer[Double] = this.getBeta_0
+        finalWriter.write("alpha:" + SVM.arrayBufferToString(this.alpha) + "\n")
+        finalWriter.write("beta:" + SVM.arrayBufferToString(this.beta) + "\n")
+        finalWriter.write("beta_0_values:" + SVM.arrayBufferToString(beta_0_values) + "\n")
+        finalWriter.write("beta_0:" + this.beta_0.toString + "\n")
+        finalWriter.write("alpha_dot_y:" + alpha_dot_y.toString + "\n")
+        finalWriter.close()
+    }
+
+    def predict(vector: ArrayBuffer[Double]): Double = 
+    {
+        var s: Double = 0.0
+        for (i <- this.alpha.indices)
+        {
+            s += this.alpha(i)*this.y(i)*SVM.GaussKernel(this.X(i), vector, this.sigma)
+        }
+        s + this.beta_0
+    }
+
+    override def test(testFileName: String): Unit = 
+    {
+        assert(Files.exists(Paths.get(testFileName)))
+        val (data, labels) = SVM.readFile(testFileName)
+        val predictions: ArrayBuffer[Double] = data.map(vector => this.predict(vector))
+        SVM.printFile(predictions, labels, "prediction,label", "prediction_label.csv")
+        val confusionMatrix:ArrayBuffer[ArrayBuffer[Double]] = SVM.getConfusionMatrix(predictions, labels, "confusion_matrix.txt")
+        assert(confusionMatrix.length == 2)
+        assert(confusionMatrix(0).length == 2)
+    }
+}
+
 object SVM
 {    
     def getLines(inputFileName: String): (String, ArrayBuffer[String]) = 
@@ -622,6 +876,19 @@ object SVM
             result += array_1(i)*array_2(i)
         }
         result
+    }
+
+    def square(a: Double): Double = a*a
+
+    def GaussKernel(a: ArrayBuffer[Double], b: ArrayBuffer[Double], sigma: Double): Double = 
+    {
+        assert(a.length == b.length)
+        var s: Double = 0.0
+        for (i <- a.indices)
+        {
+            s += square(a(i) - b(i))
+        }
+        exp(-s/(2*sigma*sigma))
     }
 
     def norm(array: ArrayBuffer[Double]): Double = sqrt(innerProduct(array, array))
@@ -780,7 +1047,7 @@ object SVM
 
 object svm_test
 {
-    def crossValidation(inputFileName: String, trainRatio: Double, C: Double, positiveFactor: Double): Unit = 
+    def crossValidation(inputFileName: String, trainRatio: Double, C: Double, positiveFactor: Double, useKernel: Boolean): Unit = 
     {
         assert(Files.exists(Paths.get(inputFileName)))
         assert(trainRatio > 0 && trainRatio < 1)
@@ -800,39 +1067,51 @@ object svm_test
         assert(positiveFactor >= 1.0)
         println("positiveFactor = " + positiveFactor)
         println("Creating the classifier ... ")
-        val svm = new SVM(trainFileName, C, positiveFactor)
-        /*println("Initial alpha:" + SVM.arrayBufferToString(svm.alpha))*/
-        println("Classifier created. ")
-        val useTwoDimensionalData: Boolean = (svm.numberOfFeatures == 2)
-        println("Training the model ... ")
-        svm.train()
-        /*val increaseRatio: Double = 3.0
-        val upperLimit: Double = 100000.00
-        svm.anneal(increaseRatio, upperLimit)*/
-        println("Model training finished. ")
-        if (useTwoDimensionalData)
+        if (!useKernel)
         {
-            val x: ArrayBuffer[Double] = new ArrayBuffer[Double]
-            for (i <- svm.y.indices)
+            val svm = new SVM(trainFileName, C, positiveFactor)
+            /*println("Initial alpha:" + SVM.arrayBufferToString(svm.alpha))*/
+            println("Classifier created. ")
+            val useTwoDimensionalData: Boolean = (svm.numberOfFeatures == 2)
+            println("Training the model ... ")
+            svm.train()
+            /*val increaseRatio: Double = 3.0
+            val upperLimit: Double = 100000.00
+            svm.anneal(increaseRatio, upperLimit)*/
+            println("Model training finished. ")
+            if (useTwoDimensionalData && !useKernel)
             {
-                x.append(svm.X(i)(0))
+                val x: ArrayBuffer[Double] = new ArrayBuffer[Double]
+                for (i <- svm.y.indices)
+                {
+                    x.append(svm.X(i)(0))
+                }
+                val xLower: Double = x.reduce((a, b) => min(a, b))
+                val xUpper: Double = x.reduce((a, b) => max(a, b))
+                SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, -1, "lower_boundary.txt")
+                SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 0, "boundary.txt")
+                SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 1, "upper_boundary.txt")
             }
-            val xLower: Double = x.reduce((a, b) => min(a, b))
-            val xUpper: Double = x.reduce((a, b) => max(a, b))
-            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, -1, "lower_boundary.txt")
-            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 0, "boundary.txt")
-            SVM.generateBoundary(xLower, xUpper, svm.beta, svm.beta_0, 1, "upper_boundary.txt")
-        }
-        /*else
-        {
             println("Testing the model ... ")
             svm.test(testFileName)
             println("Model testing finished. ")
-        }*/
-
-        println("Testing the model ... ")
-        svm.test(testFileName)
-        println("Model testing finished. ")
+        }
+        else
+        {
+            val sigma: Double = 1.0
+            val svm = new SVMGaussKernel(trainFileName, C, positiveFactor, sigma)
+            /*println("Initial alpha:" + SVM.arrayBufferToString(svm.alpha))*/
+            println("Classifier created. ")
+            println("Training the model ... ")
+            svm.train()
+            /*val increaseRatio: Double = 3.0
+            val upperLimit: Double = 100000.00
+            svm.anneal(increaseRatio, upperLimit)*/
+            println("Model training finished. ")
+            println("Testing the model ... ")
+            svm.test(testFileName)
+            println("Model testing finished. ")
+        }
     }
 
     def main(args: Array[String]): Unit = 
@@ -850,7 +1129,8 @@ object svm_test
         val positiveFactor: Double = args(3).toDouble
         assert(C > 0)
         assert(positiveFactor >= 1.0)
-        crossValidation(inputFileName, trainRatio, C, positiveFactor)
+        val useKernel: Boolean = false
+        crossValidation(inputFileName, trainRatio, C, positiveFactor, useKernel)
         val t1 = System.nanoTime()
         val timeDiff: Double = (t1 - t0)*1.0e-9
         println("Total time used in seconds: " + timeDiff)
