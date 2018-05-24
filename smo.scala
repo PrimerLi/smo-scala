@@ -1,3 +1,9 @@
+/*
+CopyRight 2018
+@author Enzhi Li
+All rights reserved. 
+*/
+
 import scala.collection.mutable.ArrayBuffer
 import java.io.{File, PrintWriter}
 import scala.io.Source
